@@ -1,0 +1,1358 @@
+---
+title: "ECHO tutorial"
+output: html_notebook
+---
+
+ECHO is a system of R scripts and functions for quantifying the nutrients sources and their transport in catchments of different scales.
+Main sources are:
+
+- ANIMO model, Outflow of agriculture and nature area
+- Emission Registration (Industry, Atmospheric deposition, Other agriculture, Water treatment plants, Others) [ER](http://www.emissieregistratie.nl/erpubliek/erpub/default.nl.aspx)
+- Foreign rivers/streams [RWS](https://waterinfo.rws.nl/#!/nav/expert/)
+
+1. Load packages, constants and functions
+
+```{r}
+pacman::p_load("tidyverse", "sf", "RODBC", "lubridate")
+```
+2. Settings and functions
+```{r}
+source("Directories.R")
+source("Functions.R")
+source("Constants.R")
+```
+3. load STONE shape files: 538 catchments (ha), and merge with stone plot numbers
+```{r}
+Catchment <- read_csv(CSV_Catchment, show_col_types = FALSE) %>%
+  rename(ID = 1, Water_Body = 2, Area_Catchment = 3)
+Catchment
+```
+4. Prepare fundamental data frame
+```{r}
+Catchment_Time <- tibble(ID = rep(1:NoC, each = length(YoI) * 12), Year = rep(rep(YoI, each = 12), NoC), Month = rep(1:12, NoC * length(YoI)))
+Catchment_Time
+```
+5. Catchment ID vs Stone plot number, with plot area
+```{r}
+Catchment_Plot <- as.data.frame(read_delim(TXT_Catchment_Plot, show_col_types = FALSE)) %>%
+  rename(ID = 1, Plot = 2, Area_Plot = 3)
+Catchment_Plot
+```
+6. load STONE output data, years of interest, P(kg/m2/decade), N(kg/m2/decade)
+```{r}
+Stone <- read_csv(CSV_Stone, show_col_types = FALSE)
+Stone
+```
+#------------------------------------------------------------------------------------------------------------------
+# N (kg)
+# Monthly
+```{r}
+Stone_N_Monthly <- Stone %>%
+  select(Plot, Year, Month, N) %>%
+  group_by(Plot, Year, Month) %>%
+  summarise(N = sum(N, na.rm = TRUE), .groups = "drop") %>%
+  right_join(Catchment_Plot, by = "Plot") %>%
+  mutate(N = Area_Plot * N) %>%
+  group_by(ID, Year, Month) %>%
+  summarise(Stone_N = sum(N, na.rm = TRUE), .groups = "drop")
+Stone_N_Monthly <- left_join(Catchment_Time, Stone_N_Monthly, by = c("ID", "Year", "Month")) %>%
+  replace(is.na(.), 0.0)
+write.csv(Stone_N_Monthly, file = "../Results/Stone_N_Monthly.csv", row.names = FALSE)
+```
+
+#-------------------------
+# Yearly
+```{r}
+Stone_N_Yearly <- Stone_N_Monthly %>%
+  group_by(ID, Year) %>%
+  summarise(Stone_N = sum(Stone_N, na.rm = TRUE), .groups = "drop")
+write.csv(Stone_N_Yearly, file = "../Results/Stone_N_Yearly.csv", row.names = FALSE)
+```
+#--------------------------------------------------------------------------------
+# P (kg)
+# Monthly
+```{r}
+Stone_P_Monthly <- Stone %>%
+  select(Plot, Year, Month, P) %>%
+  group_by(Plot, Year, Month) %>%
+  summarise(P = sum(P, na.rm = TRUE), .groups = "drop") %>%
+  right_join(Catchment_Plot, by = "Plot") %>%
+  mutate(P = Area_Plot * P) %>%
+  group_by(ID, Year, Month) %>%
+  summarise(Stone_P = sum(P, na.rm = TRUE), .groups = "drop")
+Stone_P_Monthly <- left_join(Catchment_Time, Stone_P_Monthly, by = c("ID", "Year", "Month")) %>%
+  replace(is.na(.), 0.0)
+write.csv(Stone_P_Monthly, file = "../Results/Stone_P_Monthly.csv", row.names = FALSE)
+```
+#-------------------------
+# Yearly
+```{r}
+Stone_P_Yearly <- Stone_P_Monthly %>%
+  group_by(ID, Year) %>%
+  summarise(Stone_P = sum(Stone_P, na.rm = TRUE), .groups = "drop")
+write.csv(Stone_P_Yearly, file = "../Results/Stone_P_Yearly.csv", row.names = FALSE)
+```
+###############################################################################################################################
+# Emission from Emission Registration (ER) for open water, kg
+# N total (303), P total (302), Q(85)
+
+# load Catchment-ER matching file (538 catchments overlay with gaf90)
+```{r}
+Catchment_ER <- read_csv(CSV_ER, show_col_types = FALSE)
+```
+
+# Emissions, with AI code
+```{r}
+ER_N <- read_csv(CSV_ER_N, show_col_types = FALSE)
+ER_P <- read_csv(CSV_ER_P, show_col_types = FALSE)
+```
+#--------------------------------------------------------------------------------------------
+# RWZI
+```{r}
+RWZI_Catchment_AI <- read_csv(CSV_RWZI_Catchment, show_col_types = FALSE)
+```
+# N
+```{r}
+RWZI_N_Yearly <- filter(ER_N, Group == "RWZI", !is.na(Emission)) %>%
+  left_join(RWZI_Catchment_AI, by = "AI_code") %>%
+  group_by(ID, Year) %>%
+  summarise(RWZI_N = sum(Emission, na.rm = TRUE), .groups = "drop") %>%
+  spread(Year, RWZI_N) %>%
+  pivot_longer(cols = 2:11, names_to ="Year", values_to = "RWZI_N") %>%
+  group_by(ID) %>%
+  mutate(RWZI_N = ifelse(is.na(RWZI_N), mean(RWZI_N, na.rm = TRUE), RWZI_N))
+write.csv(RWZI_N_Yearly, file = "../Results/RWZI_N_Yearly.csv", row.names = FALSE)
+```
+```{r}
+RWZI_N_Yearly$Year <- as.numeric(RWZI_N_Yearly$Year)
+RWZI_N_Monthly <- mutate(RWZI_N_Yearly, RWZI_N = RWZI_N/12)
+RWZI_N_Monthly <- left_join(Catchment_Time, RWZI_N_Monthly, by = c("ID", "Year")) %>%
+  replace(is.na(.), 0.0)
+write.csv(RWZI_N_Monthly, file = "../Results/RWZI_N_Monthly.csv", row.names = FALSE)
+```
+
+# P
+```{r}
+RWZI_P_Yearly <- filter(ER_P, Group == "RWZI", !is.na(Emission)) %>%
+  left_join(RWZI_Catchment_AI, by = "AI_code") %>%
+  group_by(ID, Year) %>%
+  summarise(RWZI_P = sum(Emission, na.rm = TRUE), .groups = "drop") %>%
+  spread(Year, RWZI_P) %>%
+  pivot_longer(cols = 2:11, names_to ="Year", values_to = "RWZI_P") %>%
+  group_by(ID) %>%
+  mutate(RWZI_P = ifelse(is.na(RWZI_P), mean(RWZI_P, na.rm = TRUE), RWZI_P))
+write.csv(RWZI_P_Yearly, file = "../Results/RWZI_P_Yearly.csv", row.names = FALSE)
+```
+```{r}
+RWZI_P_Yearly$Year <- as.numeric(RWZI_P_Yearly$Year)
+RWZI_P_Monthly <- mutate(RWZI_P_Yearly, RWZI_P = RWZI_P/12)
+RWZI_P_Monthly <- left_join(Catchment_Time, RWZI_P_Monthly, by = c("ID", "Year")) %>%
+  replace(is.na(.), 0.0)
+write.csv(RWZI_P_Monthly, file = "../Results/RWZI_P_Monthly.csv", row.names = FALSE)
+```
+#--------------------------------------------------------------------------------------------
+# # Overige landbouweemissies
+# N
+```{r}
+LO_N_Yearly <- filter(ER_N, Group == "LO", !is.na(Emission)) %>%
+  left_join(Catchment_ER,  by = "AI_code") %>%
+  group_by(ID, Year) %>%
+  summarise(LO_N = sum(Emission, na.rm = TRUE), .groups = "drop") %>%
+  spread(Year, LO_N) %>%
+  pivot_longer(cols = 2:11, names_to ="Year", values_to = "LO_N") %>%
+  group_by(ID) %>%
+  mutate(LO_N = ifelse(is.na(LO_N), mean(LO_N, na.rm = TRUE), LO_N))
+write.csv(LO_N_Yearly, file = "../Results/LO_N_Yearly.csv", row.names = FALSE)
+```
+```{r}
+LO_N_Yearly$Year <- as.numeric(LO_N_Yearly$Year)
+LO_N_Monthly <- mutate(LO_N_Yearly, LO_N = LO_N/12)
+LO_N_Monthly <- left_join(Catchment_Time, LO_N_Monthly, by = c("ID", "Year")) %>%
+  replace(is.na(.), 0.0)
+write.csv(LO_N_Monthly, file = "../Results/LO_N_Monthly.csv", row.names = FALSE)
+```
+# Industry
+```{r}
+IN_N_Yearly <- filter(ER_N, Group == "IN", !is.na(Emission)) %>%
+  left_join(Catchment_ER,  by = "AI_code") %>%
+  group_by(ID, Year) %>%
+  summarise(IN_N = sum(Emission, na.rm = TRUE), .groups = "drop") %>%
+  spread(Year, IN_N) %>%
+  pivot_longer(cols = 2:11, names_to ="Year", values_to = "IN_N") %>%
+  group_by(ID) %>%
+  mutate(IN_N = ifelse(is.na(IN_N), mean(IN_N, na.rm = TRUE), IN_N))
+write.csv(IN_N_Yearly, file = "../Results/IN_N_Yearly.csv", row.names = FALSE)
+```
+```{r}
+IN_N_Yearly$Year <- as.numeric(IN_N_Yearly$Year)
+IN_N_Monthly <- mutate(IN_N_Yearly, IN_N = IN_N/12)
+IN_N_Monthly <- left_join(Catchment_Time, IN_N_Monthly, by = c("ID", "Year")) %>%
+  replace(is.na(.), 0.0)
+write.csv(IN_N_Monthly, file = "../Results/IN_N_Monthly.csv", row.names = FALSE)
+```
+# Atmosf deposition
+```{r}
+DW_N_Yearly <- filter(ER_N, Group == "DW", !is.na(Emission)) %>%
+  left_join(Catchment_ER,  by = "AI_code") %>%
+  group_by(ID, Year) %>%
+  summarise(DW_N = sum(Emission, na.rm = TRUE), .groups = "drop") %>%
+  spread(Year, DW_N) %>%
+  drop_na() %>%
+  add_column("2012" = NA, .after = "2010") %>%
+  add_column("2011" = NA, .after = "2010") %>%
+  pivot_longer(cols = 2:11, names_to ="Year", values_to = "DW_N") %>%
+  group_by(ID) %>%
+  mutate(DW_N = ifelse(is.na(DW_N), mean(DW_N, na.rm = TRUE), DW_N))
+write.csv(DW_N_Yearly, file = "../Results/DW_N_Yearly.csv", row.names = FALSE)
+```
+```{r}
+DW_N_Yearly$Year <- as.numeric(DW_N_Yearly$Year)
+DW_N_Monthly <- mutate(DW_N_Yearly, DW_N = DW_N/12)
+DW_N_Monthly <- left_join(Catchment_Time, DW_N_Monthly, by = c("ID", "Year")) %>%
+  replace(is.na(.), 0.0)
+write.csv(DW_N_Monthly, file = "../Results/DW_N_Monthly.csv", row.names = FALSE)
+```
+# Overige
+```{r}
+OR_N_Yearly <- filter(ER_N, Group == "OR", !is.na(Emission)) %>%
+  left_join(Catchment_ER,  by = "AI_code") %>%
+  group_by(ID, Year) %>%
+  summarise(OR_N = sum(Emission, na.rm = TRUE), .groups = "drop") %>%
+  spread(Year, OR_N) %>%
+  pivot_longer(cols = 2:11, names_to ="Year", values_to = "OR_N") %>%
+  group_by(ID) %>%
+  mutate(OR_N = ifelse(is.na(OR_N), mean(OR_N, na.rm = TRUE), OR_N))
+write.csv(OR_N_Yearly, file = "../Results/OR_N_Yearly.csv", row.names = FALSE)
+```
+```{r}
+OR_N_Yearly$Year <- as.numeric(OR_N_Yearly$Year)
+OR_N_Monthly <- mutate(OR_N_Yearly, OR_N = OR_N/12)
+OR_N_Monthly <- left_join(Catchment_Time, OR_N_Monthly, by = c("ID", "Year")) %>%
+  replace(is.na(.), 0.0)
+write.csv(OR_N_Monthly, file = "../Results/OR_N_Monthly.csv", row.names = FALSE)
+```
+#-----------------------------------------------------------------------------
+# # Overige landbouweemissies
+# P
+```{r}
+LO_P_Yearly <- filter(ER_P, Group == "LO", !is.na(Emission)) %>%
+  left_join(Catchment_ER,  by = "AI_code") %>%
+  group_by(ID, Year) %>%
+  summarise(LO_P = sum(Emission, na.rm = TRUE), .groups = "drop") %>%
+  spread(Year, LO_P) %>%
+  pivot_longer(cols = 2:11, names_to ="Year", values_to = "LO_P") %>%
+  group_by(ID) %>%
+  mutate(LO_P = ifelse(is.na(LO_P), mean(LO_P, na.rm = TRUE), LO_P))
+write.csv(LO_P_Yearly, file = "../Results/LO_P_Yearly.csv", row.names = FALSE)
+```
+```{r}
+LO_P_Yearly$Year <- as.numeric(LO_P_Yearly$Year)
+LO_P_Monthly <- mutate(LO_P_Yearly, LO_P = LO_P/12)
+LO_P_Monthly <- left_join(Catchment_Time, LO_P_Monthly, by = c("ID", "Year")) %>%
+  replace(is.na(.), 0.0)
+write.csv(LO_P_Monthly, file = "../Results/LO_P_Monthly.csv", row.names = FALSE)
+```
+
+# Industry
+```{r}
+IN_P_Yearly <- filter(ER_P, Group == "IN", !is.na(Emission)) %>%
+  left_join(Catchment_ER,  by = "AI_code") %>%
+  group_by(ID, Year) %>%
+  summarise(IN_P = sum(Emission, na.rm = TRUE), .groups = "drop") %>%
+  spread(Year, IN_P) %>%
+  pivot_longer(cols = 2:11, names_to ="Year", values_to = "IN_P") %>%
+  group_by(ID) %>%
+  mutate(IN_P = ifelse(is.na(IN_P), mean(IN_P, na.rm = TRUE), IN_P))
+write.csv(IN_P_Yearly, file = "../Results/IN_P_Yearly.csv", row.names = FALSE)
+```
+```{r}
+IN_P_Yearly$Year <- as.numeric(IN_P_Yearly$Year)
+IN_P_Monthly <- mutate(IN_P_Yearly, IN_P = IN_P/12)
+IN_P_Monthly <- left_join(Catchment_Time, IN_P_Monthly, by = c("ID", "Year")) %>%
+  replace(is.na(.), 0.0)
+write.csv(IN_P_Monthly, file = "../Results/IN_P_Monthly.csv", row.names = FALSE)
+```
+# Overige
+```{r}
+OR_P_Yearly <- filter(ER_P, Group == "OR", !is.na(Emission)) %>%
+  left_join(Catchment_ER,  by = "AI_code") %>%
+  group_by(ID, Year) %>%
+  summarise(OR_P = sum(Emission, na.rm = TRUE), .groups = "drop") %>%
+  spread(Year, OR_P) %>%
+  pivot_longer(cols = 2:11, names_to ="Year", values_to = "OR_P") %>%
+  group_by(ID) %>%
+  mutate(OR_P = ifelse(is.na(OR_P), mean(OR_P, na.rm = TRUE), OR_P))
+write.csv(OR_P_Yearly, file = "../Results/OR_P_Yearly.csv", row.names = FALSE)
+```
+```{r}
+OR_P_Yearly$Year <- as.numeric(OR_P_Yearly$Year)
+OR_P_Monthly <- mutate(OR_P_Yearly, OR_P = OR_P/12)
+OR_P_Monthly <- left_join(Catchment_Time, OR_P_Monthly, by = c("ID", "Year")) %>%
+  replace(is.na(.), 0.0)
+write.csv(OR_P_Monthly, file = "../Results/OR_P_Monthly.csv", row.names = FALSE)
+```
+#-----------------------------------------------------------------------------------------------------------------------------------------------------------
+# 9. Incoming and Discharge
+# Big rivers
+#-----------------------------------------------------------------------------------------------------------------------------------------------------------
+# Inlet and Discharge Q, m3/s
+```{r}
+In_Out_let_Q <- read_csv(CSV_In_Out_Q, show_col_types = FALSE)
+```
+#------------------------------
+# Inlet Q
+```{r}
+Inlet_Q_Monthly <- In_Out_let_Q %>%
+  filter(Location %in% c("EIJSDGS", "LOBH", "SCHAARVODDL"), Year %in% YoI) %>%
+  group_by(Location, Year, Month) %>%
+  summarise(Q = mean(Q, na.rm = TRUE), .groups = "drop") %>%
+  mutate(Days = days_in_month(as.Date(paste(Year, Month,"01", sep = "-"))), Discharge = Q * Days * 86400) %>%
+  select(Location, Year, Month, Discharge)
+```
+#-----------------------------------------------------------------------------------------------------------------------------------------------------------
+# N,P, mg/l
+```{r}
+In_Out_NP <- read_csv(CSV_In_Out_NP, show_col_types = FALSE)
+```
+#------------------------------
+# Incoming N
+```{r}
+Inlet_N_Monthly <- In_Out_NP %>%
+  select(Location, Day, Month, Year, Parameter, Measurement) %>%
+  filter(Parameter %in% c("stikstof Kjeldahl", "nitraat", "nitriet"), Location %in% c("EIJSDPTN", "LOBPTN", "SCHAARVODDL"), Year %in% YoI) %>%
+  spread(Parameter, Measurement) %>%
+  rename(NO2 = "nitriet", NO3 = "nitraat", NKj = "stikstof Kjeldahl") %>%
+  group_by(Location, Year, Month) %>%
+  summarise(across(c(NO2, NO3, NKj), mean, na.rm = TRUE), .groups = "drop") %>%
+  mutate(Inlet_N = 0.001 * (NKj + NO3 + NO2) * Inlet_Q_Monthly$Discharge) %>%
+  select(Location, Year, Month, Inlet_N)
+
+Inlet_Lobptn1 <- filter(Inlet_N_Monthly, Location == "LOBPTN") %>%
+  mutate(Location = "LOBPTN1", Inlet_N = Inlet_N * 0.15)
+Inlet_Lobptn2 <- filter(Inlet_N_Monthly, Location == "LOBPTN") %>%
+  mutate(Location = "LOBPTN2", Inlet_N = Inlet_N * 0.85)
+Inlet_N_Monthly <- filter(Inlet_N_Monthly, !Location == "LOBPTN") %>%
+  bind_rows(Inlet_Lobptn1, Inlet_Lobptn2) %>%
+  mutate(ID = case_when(Location ==  "LOBPTN1" ~ 1002,
+                        Location ==  "LOBPTN2" ~ 1004,
+                        Location ==  "EIJSDPTN" ~ 1001,
+                        Location ==  "SCHAARVODDL" ~ 1003))
+write.csv(Inlet_N_Monthly, file = "../Results/Inlet_BigRivers_N_Monthly.csv", row.names = FALSE)
+```
+```{r}
+Inlet_N_Yearly <- Inlet_N_Monthly %>%
+  group_by(ID, Year) %>%
+  summarise(Inlet_N = sum(Inlet_N, na.rm = TRUE), .groups = "drop")
+write.csv(Inlet_N_Yearly, file = "../Results/Inlet_BigRivers_N_Yearly.csv", row.names = FALSE)
+```
+#------------------------------
+# Incoming P
+```{r}
+Inlet_P_Monthly <- In_Out_NP %>%
+  select(Location, Day, Month, Year, Parameter, Measurement) %>%
+  filter(Parameter == "fosfor totaal", Location %in% c("EIJSDPTN", "LOBPTN", "SCHAARVODDL"), Year %in% YoI) %>%
+  group_by(Location, Year, Month) %>%
+  summarise(Inlet_P = mean(Measurement, na.rm = TRUE), .groups = "drop") %>%
+  mutate(Inlet_P = 0.001 * Inlet_P * Inlet_Q_Monthly$Discharge) %>%
+  select(Location, Year, Month, Inlet_P)
+write.csv(Inlet_P_Monthly, file = "../Results/Inlet_BigRivers_P_Monthly.csv", row.names = FALSE)
+```
+```{r}
+Inlet_Lobptn1 <- filter(Inlet_P_Monthly, Location == "LOBPTN") %>%
+  mutate(Location = "LOBPTN1", Inlet_P = Inlet_P * 0.15)
+Inlet_Lobptn2 <- filter(Inlet_P_Monthly, Location == "LOBPTN") %>%
+  mutate(Location = "LOBPTN2", Inlet_P = Inlet_P * 0.85)
+Inlet_P_Monthly <- filter(Inlet_P_Monthly, !Location == "LOBPTN") %>%
+  bind_rows(Inlet_Lobptn1, Inlet_Lobptn2) %>%
+  mutate(ID = case_when(Location ==  "LOBPTN1" ~ 1002,
+                        Location ==  "LOBPTN2" ~ 1004,
+                        Location ==  "EIJSDPTN" ~ 1001,
+                        Location ==  "SCHAARVODDL" ~ 1003))
+write.csv(Inlet_P_Monthly, file = "../Results/Inlet_BigRivers_P_Monthly.csv", row.names = FALSE)
+```
+```{r}
+Inlet_P_Yearly <- Inlet_P_Monthly %>%
+  group_by(ID, Year) %>%
+  summarise(Inlet_P = sum(Inlet_P, na.rm = TRUE), .groups = "drop")
+write.csv(Inlet_P_Yearly, file = "../Results/Inlet_BigRivers_P_Yearly.csv", row.names = FALSE)
+```
+# ---------------------------------------------------------------------------------------------------------------------
+# small streams from neibouring countries
+# ---------------------------------------------------------------------------------------------------------------------
+```{r}
+Catchment_buitenland <- read_csv(CSV_Catchment_buitenland, show_col_types = FALSE) %>%
+  filter(str_detect(inlaat, "Buitenland"), !str_detect(debiet, "op basis van vrachtbepaling")) %>%
+  select(ID, debiet, kwaliteit)
+```
+```{r}
+IN_buitenland_Q_Monthly <- read_csv(CSV_IN_buitenland_Q_mean, show_col_types = FALSE) %>%
+  filter(Year %in% YoI) %>%
+  pivot_longer(cols = 3:37, names_to ="debiet", values_to = "Q") %>%
+  mutate(Q = days_in_month(as.Date(paste(Year, Month,"01", sep = "-"))) * 86400 * Q) %>%
+  left_join(Catchment_buitenland, by = "debiet")
+```
+#  select(ID, Year, Month, Q)
+#-------------------------------------------------------------------------------------
+# N
+# data as concentration
+```{r}
+IN_buitenland_N_Monthly <- read_csv(CSV_IN_buitenland_N_mean, show_col_types = FALSE) %>%
+  filter(Year %in% YoI)%>%
+  pivot_longer(cols = 3:37, names_to = "kwaliteit", values_to = "BL_N") %>%
+  left_join(IN_buitenland_Q_Monthly, by = c("Year", "Month", "kwaliteit")) %>%
+  drop_na() %>%
+  mutate(BL_N = BL_N * Q * 0.001) %>%
+  group_by(ID, Year, Month) %>%
+  summarise(BL_N = sum(BL_N, na.rm = TRUE), .groups = "drop")
+```
+# data as yearly N/P, divided by 12 to get monthly
+```{r}
+IN_buitenland_N_Monthly2 <- read_csv(CSV_IN_buitenland_N_mean2, show_col_types = FALSE)
+IN_buitenland_N_Monthly2 <- left_join(Catchment_Time, IN_buitenland_N_Monthly2, by = c("ID", "Year")) %>%
+  replace(is.na(.), 0.0)
+```
+```{r}
+IN_buitenland_N_Monthly <- left_join(Catchment_Time, IN_buitenland_N_Monthly, by = c("ID", "Year", "Month")) %>%
+  replace(is.na(.), 0.0) %>%
+  mutate(BL_N = BL_N + IN_buitenland_N_Monthly2$BL_N)
+write.csv(IN_buitenland_N_Monthly, file = "../Results/Inlet_SmallRivers_N_Monthly.csv", row.names = FALSE)
+```
+```{r}
+IN_buitenland_N_Yearly <- IN_buitenland_N_Monthly %>%
+  group_by(ID, Year) %>%
+  summarise(BL_N = sum(BL_N, na.rm = TRUE), .groups = "drop")
+write.csv(IN_buitenland_N_Yearly, file = "../Results/Inlet_SmallRivers_N_Yearly.csv", row.names = FALSE)
+```
+#-------------------------------------------------------------------------------------
+# P
+# data as concentration
+```{r}
+IN_buitenland_P_Monthly <- read_csv(CSV_IN_buitenland_P_mean, show_col_types = FALSE) %>%
+  filter(Year %in% YoI)%>%
+  pivot_longer(cols = 3:37, names_to ="kwaliteit", values_to = "BL_P") %>%
+  left_join(IN_buitenland_Q_Monthly, by = c("Year", "Month", "kwaliteit")) %>%
+  drop_na() %>%
+  mutate(BL_P = BL_P * Q * 0.001) %>%
+  group_by(ID, Year, Month) %>%
+  summarise(BL_P = sum(BL_P, na.rm = TRUE), .groups = "drop")
+```
+# data as yearly N/P, divided by 12 to get monthly
+```{r}
+IN_buitenland_P_Monthly2 <- read_csv(CSV_IN_buitenland_P_mean2, show_col_types = FALSE)
+IN_buitenland_P_Monthly2 <- left_join(Catchment_Time, IN_buitenland_P_Monthly2, by = c("ID", "Year")) %>%
+  replace(is.na(.), 0.0)
+```
+```{r}
+IN_buitenland_P_Monthly <- left_join(Catchment_Time, IN_buitenland_P_Monthly, by = c("ID", "Year", "Month")) %>%
+  replace(is.na(.), 0.0) %>%
+  mutate(BL_P = BL_P + IN_buitenland_P_Monthly2$BL_P)
+write.csv(IN_buitenland_P_Monthly, file = "../Results/Inlet_SmallRivers_P_Monthly.csv", row.names = FALSE)
+```
+```{r}
+IN_buitenland_P_Yearly <- IN_buitenland_P_Monthly %>%
+  group_by(ID, Year) %>%
+  summarise(BL_P = sum(BL_P, na.rm = TRUE), .groups = "drop")
+write.csv(IN_buitenland_P_Yearly, file = "../Results/Inlet_SmallRivers_P_Yearly.csv", row.names = FALSE)
+```
+# ---------------------------------------------------------------------------------------------------------------------
+# prepare data for in-land routing
+# Retention
+# U&A
+```{r}
+Soil <- as.data.frame(read_delim(TXT_Soil, show_col_types = FALSE))
+```
+```{r}
+Retention_UA_N <- Soil %>%
+  mutate(Ret_Absolute_Summer = case_when(TYPEAE == "polder" & Bodem =="Klei" ~ OW_summer_incl_ha * 10 * N_Ret_Klei_Summer_gNm2,
+                                         TYPEAE == "polder" & Bodem =="Veen" ~ OW_summer_incl_ha * 10 * N_Ret_Veen_Summer_gNm2,
+                                         TRUE ~ 1e100)) %>%
+  mutate(Ret_Absolute_Winter = case_when(TYPEAE == "polder" & Bodem =="Klei" ~ OW_winter_incl_ha * 10 * N_Ret_Klei_Winter_gNm2,
+                                         TYPEAE == "polder" & Bodem =="Veen" ~ OW_winter_incl_ha * 10 * N_Ret_Veen_Winter_gNm2,
+                                         TRUE ~ 1e100)) %>%
+  mutate(Ret_Fraction_Summer = case_when(TYPEAE == "vrij afwaterend" ~ pmin(N_a_Summer * (AfvS_m3s / OW_summer_excl_ha) ^ N_b_Summer, 0.9),
+                                         TYPEAE == "polder" & Bodem %in% c("Klei", "Veen") ~ 0.9,
+                                         TRUE ~ 0.5)) %>%
+  mutate(Ret_Fraction_Winter = case_when(TYPEAE == "vrij afwaterend" ~ pmin(N_a_Winter * (AfvS_m3s / OW_winter_excl_ha) ^ N_b_Winter, 0.9),
+                                         TYPEAE == "polder" & Bodem %in% c("Klei", "Veen") ~ 0.9,
+                                         TRUE ~ 0.5)) %>%
+  select(ID, Ret_Absolute_Summer, Ret_Absolute_Winter, Ret_Fraction_Summer, Ret_Fraction_Winter)
+```
+```{r}
+Retention_UA_P <- Soil %>%
+  mutate(Ret_Fraction_Summer = case_when(TYPEAE == "vrij afwaterend" ~ pmin(P_a_Summer * (AfvS_m3s / OW_summer_excl_ha) ^ P_b_Summer, 0.9),
+                                         TRUE ~ 0.5)) %>%
+  mutate(Ret_Fraction_Winter = case_when(TYPEAE == "vrij afwaterend" ~ pmin(P_a_Winter * (AfvS_m3s / OW_winter_excl_ha) ^ P_b_Winter, 0.9),
+                                         TRUE ~ 0.5)) %>%
+  select(ID, Ret_Fraction_Summer, Ret_Fraction_Winter)
+```
+#-------------------------------------------------------------------------------------------------------
+# retention fraction overige
+```{r}
+Retention_Fra_ER_N <- Soil %>%
+  mutate(Ret_Fraction = case_when(TYPEAE == "polder" & Bodem %in% c("Klei", "Veen") ~ 0.0, TRUE ~ 0.2)) %>%
+  select(ID,Ret_Fraction)
+```
+```{r}
+Retention_Fra_ER_P <- Soil %>%
+  mutate(Ret_Fraction = 0.2) %>%
+  select(ID,Ret_Fraction)
+```
+#------------------------------------------------------------------------------------------------------------------------
+# Catchment routing
+```{r}
+Routing_538 <- as.data.frame(read_delim(TXT_Routing_STONE, show_col_types = FALSE)) %>%
+  rename("ID" = "FROM") #from id, to 1, weight 1, to 2, weight 2, to 3, weight 3
+```
+#------------------------------------
+# UA, retention soil specific
+```{r}
+Routing_Stone_N <- Stone_N_Monthly %>%
+  left_join(Retention_UA_N, by = "ID") %>%
+  transmute(ID = ID, Year = Year, Month = Month, Stone_N = Stone_N,
+            Ret_Absolute = case_when(Month %in% 4:9 ~ Ret_Absolute_Summer, TRUE ~ Ret_Absolute_Winter),
+            Ret_Fraction = case_when(Month %in% 4:9 ~ Ret_Fraction_Summer, TRUE ~ Ret_Fraction_Winter))
+```
+```{r}
+Routing_Stone_P <- Stone_P_Monthly %>%
+  left_join(Retention_UA_P, by = "ID") %>%
+  transmute(ID = ID, Year = Year, Month = Month, Stone_P = Stone_P,
+            Ret_Fraction = case_when(Month %in% 4:9 ~ Ret_Fraction_Summer, TRUE ~ Ret_Fraction_Winter))
+```
+#------------------------------------
+# ER + Buitenland, retention 0.0 - 0.2
+```{r}
+Routing_LO_N <- LO_N_Monthly %>%
+  left_join(Retention_Fra_ER_N, by = "ID")
+Routing_IN_N <- IN_N_Monthly %>%
+  left_join(Retention_Fra_ER_N, by = "ID")
+Routing_OR_N <- OR_N_Monthly %>%
+  left_join(Retention_Fra_ER_N, by = "ID")
+Routing_DW_N <- DW_N_Monthly %>%
+  left_join(Retention_Fra_ER_N, by = "ID")
+Routing_RWZI_N <- RWZI_N_Monthly %>%
+  left_join(Retention_Fra_ER_N, by = "ID")
+Routing_BL_N <- IN_buitenland_N_Monthly %>%
+  left_join(Retention_Fra_ER_N, by = "ID")
+
+Routing_LO_P <- LO_P_Monthly %>%
+  left_join(Retention_Fra_ER_P, by = "ID")
+Routing_IN_P <- IN_P_Monthly %>%
+  left_join(Retention_Fra_ER_P, by = "ID")
+Routing_OR_P <- OR_P_Monthly %>%
+  left_join(Retention_Fra_ER_P, by = "ID")
+Routing_RWZI_P <- RWZI_P_Monthly %>%
+  left_join(Retention_Fra_ER_P, by = "ID")
+Routing_BL_P <- IN_buitenland_P_Monthly %>%
+  left_join(Retention_Fra_ER_P, by = "ID")
+
+Routing_ER_N <- Catchment_Time %>%
+  left_join(LO_N_Monthly, by = c("ID", "Year", "Month")) %>%
+  left_join(IN_N_Monthly, by = c("ID", "Year", "Month")) %>%
+  left_join(OR_N_Monthly, by = c("ID", "Year", "Month")) %>%
+  left_join(DW_N_Monthly, by = c("ID", "Year", "Month")) %>%
+  left_join(RWZI_N_Monthly, by = c("ID", "Year", "Month")) %>%
+  left_join(IN_buitenland_N_Monthly, by = c("ID", "Year", "Month")) %>%
+  transmute(ID = ID, Year = Year, Month = Month, ER_N = LO_N + IN_N + OR_N + DW_N + RWZI_N + BL_N) %>%
+  left_join(Retention_Fra_ER_N, by = "ID")
+
+Routing_ER_P <- Catchment_Time %>%
+  left_join(LO_P_Monthly, by = c("ID", "Year", "Month")) %>%
+  left_join(IN_P_Monthly, by = c("ID", "Year", "Month")) %>%
+  left_join(OR_P_Monthly, by = c("ID", "Year", "Month")) %>%
+  left_join(RWZI_P_Monthly, by = c("ID", "Year", "Month")) %>%
+  left_join(IN_buitenland_P_Monthly, by = c("ID", "Year", "Month")) %>%
+  transmute(ID = ID, Year = Year, Month = Month, ER_P = LO_P + OR_P + IN_P + RWZI_P + BL_P) %>%
+  left_join(Retention_Fra_ER_P, by = "ID")
+```
+#------------------------------------
+#------------------------------------
+# loop begins here
+```{r}
+Routing <- Routing_538
+for (Level in 1:7) # loop from the smallest river to large ones
+{
+  Routing_Stone_N <- mutate(Routing_Stone_N, Ret_Stone_N = Stone_N * Ret_Fraction) %>%
+    mutate(Ret_Stone_N = if_else(Ret_Stone_N < Ret_Absolute, Ret_Stone_N, Ret_Absolute), Afwenteling = Stone_N - Ret_Stone_N)
+  Routing_Stone_P <- mutate(Routing_Stone_P, Ret_Stone_P = Stone_P * Ret_Fraction, Afwenteling = Stone_P - Ret_Stone_P)
+
+  Routing_ER_N <- mutate(Routing_ER_N, Ret_ER_N = ER_N * Ret_Fraction, Afwenteling = ER_N - Ret_ER_N)
+  Routing_ER_P <- mutate(Routing_ER_P, Ret_ER_P = ER_P * Ret_Fraction, Afwenteling = ER_P - Ret_ER_P)
+
+  Routing_LO_N <- mutate(Routing_LO_N, Ret_LO_N = LO_N * Ret_Fraction, Afwenteling = LO_N - Ret_LO_N)
+  Routing_LO_P <- mutate(Routing_LO_P, Ret_LO_P = LO_P * Ret_Fraction, Afwenteling = LO_P - Ret_LO_P)
+
+  Routing_IN_N <- mutate(Routing_IN_N, Ret_IN_N = IN_N * Ret_Fraction, Afwenteling = IN_N - Ret_IN_N)
+  Routing_IN_P <- mutate(Routing_IN_P, Ret_IN_P = IN_P * Ret_Fraction, Afwenteling = IN_P - Ret_IN_P)
+
+  Routing_DW_N <- mutate(Routing_DW_N, Ret_DW_N = DW_N * Ret_Fraction, Afwenteling = DW_N - Ret_DW_N)
+
+  Routing_OR_N <- mutate(Routing_OR_N, Ret_OR_N = OR_N * Ret_Fraction, Afwenteling = OR_N - Ret_OR_N)
+  Routing_OR_P <- mutate(Routing_OR_P, Ret_OR_P = OR_P * Ret_Fraction, Afwenteling = OR_P - Ret_OR_P)
+
+  Routing_RWZI_N <- mutate(Routing_RWZI_N, Ret_RWZI_N = RWZI_N * Ret_Fraction, Afwenteling = RWZI_N - Ret_RWZI_N)
+  Routing_RWZI_P <- mutate(Routing_RWZI_P, Ret_RWZI_P = RWZI_P * Ret_Fraction, Afwenteling = RWZI_P - Ret_RWZI_P)
+
+  Routing_BL_N <- mutate(Routing_BL_N, Ret_BL_N = BL_N * Ret_Fraction, Afwenteling = BL_N - Ret_BL_N)
+  Routing_BL_P <- mutate(Routing_BL_P, Ret_BL_P = BL_P * Ret_Fraction, Afwenteling = BL_P - Ret_BL_P)
+
+
+  Upper <- filter(Routing, !ID %in% c(TO_1, TO_2, TO_3)) # does not receive water from other catchment
+  for (i in 1:nrow(Upper))
+  {
+    # Stone N
+    N_Stone_from <- filter(Routing_Stone_N, ID == Upper[i,1]) # from
+    N_Stone_to_1 <- filter(Routing_Stone_N, ID == Upper[i,2]) %>%
+      mutate(Stone_N = N_Stone_from$Afwenteling * Upper[i,3]) %>%
+      select(ID, Year, Month, Stone_N)
+    N_Stone_to_1 <- left_join(Catchment_Time, N_Stone_to_1, by = c("ID", "Year", "Month")) %>%
+      replace(is.na(.), 0.0)
+    Routing_Stone_N <- mutate(Routing_Stone_N, Stone_N = Stone_N + N_Stone_to_1$Stone_N)
+
+    # Total ER + BL N
+    N_ER_from <- filter(Routing_ER_N, ID == Upper[i,1]) # from
+    N_ER_to_1 <- filter(Routing_ER_N, ID == Upper[i,2]) %>%
+      mutate(ER_N = N_ER_from$Afwenteling * Upper[i,3]) %>%
+      select(ID, Year, Month, ER_N)
+    N_ER_to_1 <- left_join(Catchment_Time, N_ER_to_1, by = c("ID", "Year", "Month")) %>%
+      replace(is.na(.), 0.0)
+    Routing_ER_N <- mutate(Routing_ER_N, ER_N = ER_N + N_ER_to_1$ER_N)
+
+    # Stone P
+    P_Stone_from <- filter(Routing_Stone_P, ID == Upper[i,1]) # from
+    P_Stone_to_1 <- filter(Routing_Stone_P, ID == Upper[i,2]) %>%
+      mutate(Stone_P = P_Stone_from$Afwenteling * Upper[i,3]) %>%
+      select(ID, Year, Month, Stone_P)
+    P_Stone_to_1 <- left_join(Catchment_Time, P_Stone_to_1, by = c("ID", "Year", "Month")) %>%
+      replace(is.na(.), 0.0)
+    Routing_Stone_P <- mutate(Routing_Stone_P, Stone_P = Stone_P + P_Stone_to_1$Stone_P)
+
+    # Total ER + BL P
+    P_ER_from <- filter(Routing_ER_P, ID == Upper[i,1]) # from
+    P_ER_to_1 <- filter(Routing_ER_P, ID == Upper[i,2]) %>%
+      mutate(ER_P = P_ER_from$Afwenteling * Upper[i,3]) %>%
+      select(ID, Year, Month, ER_P)
+    P_ER_to_1 <- left_join(Catchment_Time, P_ER_to_1, by = c("ID", "Year", "Month")) %>%
+      replace(is.na(.), 0.0)
+    Routing_ER_P <- mutate(Routing_ER_P, ER_P = ER_P + P_ER_to_1$ER_P)
+
+    # Total LO + BL N
+    N_LO_from <- filter(Routing_LO_N, ID == Upper[i,1]) # from
+    N_LO_to_1 <- filter(Routing_LO_N, ID == Upper[i,2]) %>%
+      mutate(LO_N = N_LO_from$Afwenteling * Upper[i,3]) %>%
+      select(ID, Year, Month, LO_N)
+    N_LO_to_1 <- left_join(Catchment_Time, N_LO_to_1, by = c("ID", "Year", "Month")) %>%
+      replace(is.na(.), 0.0)
+    Routing_LO_N <- mutate(Routing_LO_N, LO_N = LO_N + N_LO_to_1$LO_N)
+
+    # Total LO + BL P
+    P_LO_from <- filter(Routing_LO_P, ID == Upper[i,1]) # from
+    P_LO_to_1 <- filter(Routing_LO_P, ID == Upper[i,2]) %>%
+      mutate(LO_P = P_LO_from$Afwenteling * Upper[i,3]) %>%
+      select(ID, Year, Month, LO_P)
+    P_LO_to_1 <- left_join(Catchment_Time, P_LO_to_1, by = c("ID", "Year", "Month")) %>%
+      replace(is.na(.), 0.0)
+    Routing_LO_P <- mutate(Routing_LO_P, LO_P = LO_P + P_LO_to_1$LO_P)
+
+    # Total IN + BL N
+    N_IN_from <- filter(Routing_IN_N, ID == Upper[i,1]) # from
+    N_IN_to_1 <- filter(Routing_IN_N, ID == Upper[i,2]) %>%
+      mutate(IN_N = N_IN_from$Afwenteling * Upper[i,3]) %>%
+      select(ID, Year, Month, IN_N)
+    N_IN_to_1 <- left_join(Catchment_Time, N_IN_to_1, by = c("ID", "Year", "Month")) %>%
+      replace(is.na(.), 0.0)
+    Routing_IN_N <- mutate(Routing_IN_N, IN_N = IN_N + N_IN_to_1$IN_N)
+
+    # Total IN + BL P
+    P_IN_from <- filter(Routing_IN_P, ID == Upper[i,1]) # from
+    P_IN_to_1 <- filter(Routing_IN_P, ID == Upper[i,2]) %>%
+      mutate(IN_P = P_IN_from$Afwenteling * Upper[i,3]) %>%
+      select(ID, Year, Month, IN_P)
+    P_IN_to_1 <- left_join(Catchment_Time, P_IN_to_1, by = c("ID", "Year", "Month")) %>%
+      replace(is.na(.), 0.0)
+    Routing_IN_P <- mutate(Routing_IN_P, IN_P = IN_P + P_IN_to_1$IN_P)
+
+    N_DW_from <- filter(Routing_DW_N, ID == Upper[i,1]) # from
+    N_DW_to_1 <- filter(Routing_DW_N, ID == Upper[i,2]) %>%
+      mutate(DW_N = N_DW_from$Afwenteling * Upper[i,3]) %>%
+      select(ID, Year, Month, DW_N)
+    N_DW_to_1 <- left_join(Catchment_Time, N_DW_to_1, by = c("ID", "Year", "Month")) %>%
+      replace(is.na(.), 0.0)
+    Routing_DW_N <- mutate(Routing_DW_N, DW_N = DW_N + N_DW_to_1$DW_N)
+
+    N_OR_from <- filter(Routing_OR_N, ID == Upper[i,1]) # from
+    N_OR_to_1 <- filter(Routing_OR_N, ID == Upper[i,2]) %>%
+      mutate(OR_N = N_OR_from$Afwenteling * Upper[i,3]) %>%
+      select(ID, Year, Month, OR_N)
+    N_OR_to_1 <- left_join(Catchment_Time, N_OR_to_1, by = c("ID", "Year", "Month")) %>%
+      replace(is.na(.), 0.0)
+    Routing_OR_N <- mutate(Routing_OR_N, OR_N = OR_N + N_OR_to_1$OR_N)
+
+    # Total OR + BL P
+    P_OR_from <- filter(Routing_OR_P, ID == Upper[i,1]) # from
+    P_OR_to_1 <- filter(Routing_OR_P, ID == Upper[i,2]) %>%
+      mutate(OR_P = P_OR_from$Afwenteling * Upper[i,3]) %>%
+      select(ID, Year, Month, OR_P)
+    P_OR_to_1 <- left_join(Catchment_Time, P_OR_to_1, by = c("ID", "Year", "Month")) %>%
+      replace(is.na(.), 0.0)
+    Routing_OR_P <- mutate(Routing_OR_P, OR_P = OR_P + P_OR_to_1$OR_P)
+
+    N_RWZI_from <- filter(Routing_RWZI_N, ID == Upper[i,1]) # from
+    N_RWZI_to_1 <- filter(Routing_RWZI_N, ID == Upper[i,2]) %>%
+      mutate(RWZI_N = N_RWZI_from$Afwenteling * Upper[i,3]) %>%
+      select(ID, Year, Month, RWZI_N)
+    N_RWZI_to_1 <- left_join(Catchment_Time, N_RWZI_to_1, by = c("ID", "Year", "Month")) %>%
+      replace(is.na(.), 0.0)
+    Routing_RWZI_N <- mutate(Routing_RWZI_N, RWZI_N = RWZI_N + N_RWZI_to_1$RWZI_N)
+
+    # Total RWZI + BL P
+    P_RWZI_from <- filter(Routing_RWZI_P, ID == Upper[i,1]) # from
+    P_RWZI_to_1 <- filter(Routing_RWZI_P, ID == Upper[i,2]) %>%
+      mutate(RWZI_P = P_RWZI_from$Afwenteling * Upper[i,3]) %>%
+      select(ID, Year, Month, RWZI_P)
+    P_RWZI_to_1 <- left_join(Catchment_Time, P_RWZI_to_1, by = c("ID", "Year", "Month")) %>%
+      replace(is.na(.), 0.0)
+    Routing_RWZI_P <- mutate(Routing_RWZI_P, RWZI_P = RWZI_P + P_RWZI_to_1$RWZI_P)
+
+     N_BL_from <- filter(Routing_BL_N, ID == Upper[i,1]) # from
+    N_BL_to_1 <- filter(Routing_BL_N, ID == Upper[i,2]) %>%
+      mutate(BL_N = N_BL_from$Afwenteling * Upper[i,3]) %>%
+      select(ID, Year, Month, BL_N)
+    N_BL_to_1 <- left_join(Catchment_Time, N_BL_to_1, by = c("ID", "Year", "Month")) %>%
+      replace(is.na(.), 0.0)
+    Routing_BL_N <- mutate(Routing_BL_N, BL_N = BL_N + N_BL_to_1$BL_N)
+
+    # Total BL + BL P
+    P_BL_from <- filter(Routing_BL_P, ID == Upper[i,1]) # from
+    P_BL_to_1 <- filter(Routing_BL_P, ID == Upper[i,2]) %>%
+      mutate(BL_P = P_BL_from$Afwenteling * Upper[i,3]) %>%
+      select(ID, Year, Month, BL_P)
+    P_BL_to_1 <- left_join(Catchment_Time, P_BL_to_1, by = c("ID", "Year", "Month")) %>%
+      replace(is.na(.), 0.0)
+    Routing_BL_P <- mutate(Routing_BL_P, BL_P = BL_P + P_BL_to_1$BL_P)
+
+
+    if (!is.na(Upper[i,4]))
+    {
+      # Stone N
+      N_Stone_to_2 <- filter(Routing_Stone_N, ID == Upper[i,4]) %>%
+        mutate(Stone_N = N_Stone_from$Afwenteling * Upper[i,5]) %>%
+        select(ID, Year, Month, Stone_N)
+      N_Stone_to_2 <- left_join(Catchment_Time, N_Stone_to_2, by = c("ID", "Year", "Month")) %>%
+        replace(is.na(.), 0.0)
+      Routing_Stone_N <- mutate(Routing_Stone_N, Stone_N = Stone_N + N_Stone_to_2$Stone_N)
+
+      # ER+BL, N
+      N_ER_to_2 <- filter(Routing_ER_N, ID == Upper[i,4]) %>%
+        mutate(ER_N = N_ER_from$Afwenteling * Upper[i,5]) %>%
+        select(ID, Year, Month, ER_N)
+      N_ER_to_2 <- left_join(Catchment_Time, N_ER_to_2, by = c("ID", "Year", "Month")) %>%
+        replace(is.na(.), 0.0)
+      Routing_ER_N <- mutate(Routing_ER_N, ER_N = ER_N + N_ER_to_2$ER_N)
+
+      # Stone P
+      P_Stone_to_2 <- filter(Routing_Stone_P, ID == Upper[i,4]) %>%
+        mutate(Stone_P = P_Stone_from$Afwenteling * Upper[i,5]) %>%
+        select(ID, Year, Month, Stone_P)
+      P_Stone_to_2 <- left_join(Catchment_Time, P_Stone_to_2, by = c("ID", "Year", "Month")) %>%
+        replace(is.na(.), 0.0)
+      Routing_Stone_P <- mutate(Routing_Stone_P, Stone_P = Stone_P + P_Stone_to_2$Stone_P)
+      # ER+BL, P
+      P_ER_to_2 <- filter(Routing_ER_P, ID == Upper[i,4]) %>%
+        mutate(ER_P = P_ER_from$Afwenteling * Upper[i,5]) %>%
+        select(ID, Year, Month, ER_P)
+      P_ER_to_2 <- left_join(Catchment_Time, P_ER_to_2, by = c("ID", "Year", "Month")) %>%
+        replace(is.na(.), 0.0)
+      Routing_ER_P <- mutate(Routing_ER_P, ER_P = ER_P + P_ER_to_2$ER_P)
+
+      # LO+BL, N
+      N_LO_to_2 <- filter(Routing_LO_N, ID == Upper[i,4]) %>%
+        mutate(LO_N = N_LO_from$Afwenteling * Upper[i,5]) %>%
+        select(ID, Year, Month, LO_N)
+      N_LO_to_2 <- left_join(Catchment_Time, N_LO_to_2, by = c("ID", "Year", "Month")) %>%
+        replace(is.na(.), 0.0)
+      Routing_LO_N <- mutate(Routing_LO_N, LO_N = LO_N + N_LO_to_2$LO_N)
+
+      # LO+BL, P
+      P_LO_to_2 <- filter(Routing_LO_P, ID == Upper[i,4]) %>%
+        mutate(LO_P = P_LO_from$Afwenteling * Upper[i,5]) %>%
+        select(ID, Year, Month, LO_P)
+      P_LO_to_2 <- left_join(Catchment_Time, P_LO_to_2, by = c("ID", "Year", "Month")) %>%
+        replace(is.na(.), 0.0)
+      Routing_LO_P <- mutate(Routing_LO_P, LO_P = LO_P + P_LO_to_2$LO_P)
+
+      N_IN_to_2 <- filter(Routing_IN_N, ID == Upper[i,4]) %>%
+        mutate(IN_N = N_IN_from$Afwenteling * Upper[i,5]) %>%
+        select(ID, Year, Month, IN_N)
+      N_IN_to_2 <- left_join(Catchment_Time, N_IN_to_2, by = c("ID", "Year", "Month")) %>%
+        replace(is.na(.), 0.0)
+      Routing_IN_N <- mutate(Routing_IN_N, IN_N = IN_N + N_IN_to_2$IN_N)
+
+      # IN+BL, P
+      P_IN_to_2 <- filter(Routing_IN_P, ID == Upper[i,4]) %>%
+        mutate(IN_P = P_IN_from$Afwenteling * Upper[i,5]) %>%
+        select(ID, Year, Month, IN_P)
+      P_IN_to_2 <- left_join(Catchment_Time, P_IN_to_2, by = c("ID", "Year", "Month")) %>%
+        replace(is.na(.), 0.0)
+      Routing_IN_P <- mutate(Routing_IN_P, IN_P = IN_P + P_IN_to_2$IN_P)
+
+      N_DW_to_2 <- filter(Routing_DW_N, ID == Upper[i,4]) %>%
+        mutate(DW_N = N_DW_from$Afwenteling * Upper[i,5]) %>%
+        select(ID, Year, Month, DW_N)
+      N_DW_to_2 <- left_join(Catchment_Time, N_DW_to_2, by = c("ID", "Year", "Month")) %>%
+        replace(is.na(.), 0.0)
+      Routing_DW_N <- mutate(Routing_DW_N, DW_N = DW_N + N_DW_to_2$DW_N)
+
+      N_OR_to_2 <- filter(Routing_OR_N, ID == Upper[i,4]) %>%
+        mutate(OR_N = N_OR_from$Afwenteling * Upper[i,5]) %>%
+        select(ID, Year, Month, OR_N)
+      N_OR_to_2 <- left_join(Catchment_Time, N_OR_to_2, by = c("ID", "Year", "Month")) %>%
+        replace(is.na(.), 0.0)
+      Routing_OR_N <- mutate(Routing_OR_N, OR_N = OR_N + N_OR_to_2$OR_N)
+
+      # OR+BL, P
+      P_OR_to_2 <- filter(Routing_OR_P, ID == Upper[i,4]) %>%
+        mutate(OR_P = P_OR_from$Afwenteling * Upper[i,5]) %>%
+        select(ID, Year, Month, OR_P)
+      P_OR_to_2 <- left_join(Catchment_Time, P_OR_to_2, by = c("ID", "Year", "Month")) %>%
+        replace(is.na(.), 0.0)
+      Routing_OR_P <- mutate(Routing_OR_P, OR_P = OR_P + P_OR_to_2$OR_P)
+
+      N_RWZI_to_2 <- filter(Routing_RWZI_N, ID == Upper[i,4]) %>%
+        mutate(RWZI_N = N_RWZI_from$Afwenteling * Upper[i,5]) %>%
+        select(ID, Year, Month, RWZI_N)
+      N_RWZI_to_2 <- left_join(Catchment_Time, N_RWZI_to_2, by = c("ID", "Year", "Month")) %>%
+        replace(is.na(.), 0.0)
+      Routing_RWZI_N <- mutate(Routing_RWZI_N, RWZI_N = RWZI_N + N_RWZI_to_2$RWZI_N)
+
+      # RWZI+BL, P
+      P_RWZI_to_2 <- filter(Routing_RWZI_P, ID == Upper[i,4]) %>%
+        mutate(RWZI_P = P_RWZI_from$Afwenteling * Upper[i,5]) %>%
+        select(ID, Year, Month, RWZI_P)
+      P_RWZI_to_2 <- left_join(Catchment_Time, P_RWZI_to_2, by = c("ID", "Year", "Month")) %>%
+        replace(is.na(.), 0.0)
+      Routing_RWZI_P <- mutate(Routing_RWZI_P, RWZI_P = RWZI_P + P_RWZI_to_2$RWZI_P)
+
+       N_BL_to_2 <- filter(Routing_BL_N, ID == Upper[i,4]) %>%
+        mutate(BL_N = N_BL_from$Afwenteling * Upper[i,5]) %>%
+        select(ID, Year, Month, BL_N)
+      N_BL_to_2 <- left_join(Catchment_Time, N_BL_to_2, by = c("ID", "Year", "Month")) %>%
+        replace(is.na(.), 0.0)
+      Routing_BL_N <- mutate(Routing_BL_N, BL_N = BL_N + N_BL_to_2$BL_N)
+
+      # BL+BL, P
+      P_BL_to_2 <- filter(Routing_BL_P, ID == Upper[i,4]) %>%
+        mutate(BL_P = P_BL_from$Afwenteling * Upper[i,5]) %>%
+        select(ID, Year, Month, BL_P)
+      P_BL_to_2 <- left_join(Catchment_Time, P_BL_to_2, by = c("ID", "Year", "Month")) %>%
+        replace(is.na(.), 0.0)
+      Routing_BL_P <- mutate(Routing_BL_P, BL_P = BL_P + P_BL_to_2$BL_P)
+
+      if (!is.na(Upper[i,6]))
+      {
+        # Stone N
+        N_Stone_to_3 <- filter(Routing_Stone_N, ID == Upper[i,6]) %>%
+          mutate(Stone_N = N_Stone_from$Afwenteling * Upper[i,7]) %>%
+          select(ID, Year, Month, Stone_N)
+        N_Stone_to_3 <- left_join(Catchment_Time, N_Stone_to_3, by = c("ID", "Year", "Month")) %>%
+          replace(is.na(.), 0.0)
+        Routing_Stone_N <- mutate(Routing_Stone_N, Stone_N = Stone_N + N_Stone_to_3$Stone_N)
+
+        # ER+BL, N
+        N_ER_to_3 <- filter(Routing_ER_N, ID == Upper[i,6]) %>%
+          mutate(ER_N = N_ER_from$Afwenteling * Upper[i,7]) %>%
+          select(ID, Year, Month, ER_N)
+        N_ER_to_3 <- left_join(Catchment_Time, N_ER_to_3, by = c("ID", "Year", "Month")) %>%
+          replace(is.na(.), 0.0)
+        Routing_ER_N <- mutate(Routing_ER_N, ER_N = ER_N + N_ER_to_3$ER_N)
+
+        # Stone P
+        P_Stone_to_3 <- filter(Routing_Stone_P, ID == Upper[i,6]) %>%
+          mutate(Stone_P = P_Stone_from$Afwenteling * Upper[i,7]) %>%
+          select(ID, Year, Month, Stone_P)
+        P_Stone_to_3 <- left_join(Catchment_Time, P_Stone_to_3, by = c("ID", "Year", "Month")) %>%
+          replace(is.na(.), 0.0)
+        Routing_Stone_P <- mutate(Routing_Stone_P, Stone_P = Stone_P + P_Stone_to_3$Stone_P)
+        # ER+BL, P
+        P_ER_to_3 <- filter(Routing_ER_P, ID == Upper[i,6]) %>%
+          mutate(ER_P = P_ER_from$Afwenteling * Upper[i,7]) %>%
+          select(ID, Year, Month, ER_P)
+        P_ER_to_3 <- left_join(Catchment_Time, P_ER_to_3, by = c("ID", "Year", "Month")) %>%
+          replace(is.na(.), 0.0)
+        Routing_ER_P <- mutate(Routing_ER_P, ER_P = ER_P + P_ER_to_3$ER_P)
+
+        # LO+BL, N
+        N_LO_to_3 <- filter(Routing_LO_N, ID == Upper[i,6]) %>%
+          mutate(LO_N = N_LO_from$Afwenteling * Upper[i,7]) %>%
+          select(ID, Year, Month, LO_N)
+        N_LO_to_3 <- left_join(Catchment_Time, N_LO_to_3, by = c("ID", "Year", "Month")) %>%
+          replace(is.na(.), 0.0)
+        Routing_LO_N <- mutate(Routing_LO_N, LO_N = LO_N + N_LO_to_3$LO_N)
+
+        # LO+BL, P
+        P_LO_to_3 <- filter(Routing_LO_P, ID == Upper[i,6]) %>%
+          mutate(LO_P = P_LO_from$Afwenteling * Upper[i,7]) %>%
+          select(ID, Year, Month, LO_P)
+        P_LO_to_3 <- left_join(Catchment_Time, P_LO_to_3, by = c("ID", "Year", "Month")) %>%
+          replace(is.na(.), 0.0)
+        Routing_LO_P <- mutate(Routing_LO_P, LO_P = LO_P + P_LO_to_3$LO_P)
+
+         N_IN_to_3 <- filter(Routing_IN_N, ID == Upper[i,6]) %>%
+          mutate(IN_N = N_IN_from$Afwenteling * Upper[i,7]) %>%
+          select(ID, Year, Month, IN_N)
+        N_IN_to_3 <- left_join(Catchment_Time, N_IN_to_3, by = c("ID", "Year", "Month")) %>%
+          replace(is.na(.), 0.0)
+        Routing_IN_N <- mutate(Routing_IN_N, IN_N = IN_N + N_IN_to_3$IN_N)
+
+        # IN+BL, P
+        P_IN_to_3 <- filter(Routing_IN_P, ID == Upper[i,6]) %>%
+          mutate(IN_P = P_IN_from$Afwenteling * Upper[i,7]) %>%
+          select(ID, Year, Month, IN_P)
+        P_IN_to_3 <- left_join(Catchment_Time, P_IN_to_3, by = c("ID", "Year", "Month")) %>%
+          replace(is.na(.), 0.0)
+        Routing_IN_P <- mutate(Routing_IN_P, IN_P = IN_P + P_IN_to_3$IN_P)
+
+        N_DW_to_3 <- filter(Routing_DW_N, ID == Upper[i,6]) %>%
+          mutate(DW_N = N_DW_from$Afwenteling * Upper[i,7]) %>%
+          select(ID, Year, Month, DW_N)
+        N_DW_to_3 <- left_join(Catchment_Time, N_DW_to_3, by = c("ID", "Year", "Month")) %>%
+          replace(is.na(.), 0.0)
+        Routing_DW_N <- mutate(Routing_DW_N, DW_N = DW_N + N_DW_to_3$DW_N)
+
+        N_OR_to_3 <- filter(Routing_OR_N, ID == Upper[i,6]) %>%
+          mutate(OR_N = N_OR_from$Afwenteling * Upper[i,7]) %>%
+          select(ID, Year, Month, OR_N)
+        N_OR_to_3 <- left_join(Catchment_Time, N_OR_to_3, by = c("ID", "Year", "Month")) %>%
+          replace(is.na(.), 0.0)
+        Routing_OR_N <- mutate(Routing_OR_N, OR_N = OR_N + N_OR_to_3$OR_N)
+
+        # OR+BL, P
+        P_OR_to_3 <- filter(Routing_OR_P, ID == Upper[i,6]) %>%
+          mutate(OR_P = P_OR_from$Afwenteling * Upper[i,7]) %>%
+          select(ID, Year, Month, OR_P)
+        P_OR_to_3 <- left_join(Catchment_Time, P_OR_to_3, by = c("ID", "Year", "Month")) %>%
+          replace(is.na(.), 0.0)
+        Routing_OR_P <- mutate(Routing_OR_P, OR_P = OR_P + P_OR_to_3$OR_P)
+
+        N_RWZI_to_3 <- filter(Routing_RWZI_N, ID == Upper[i,6]) %>%
+          mutate(RWZI_N = N_RWZI_from$Afwenteling * Upper[i,7]) %>%
+          select(ID, Year, Month, RWZI_N)
+        N_RWZI_to_3 <- left_join(Catchment_Time, N_RWZI_to_3, by = c("ID", "Year", "Month")) %>%
+          replace(is.na(.), 0.0)
+        Routing_RWZI_N <- mutate(Routing_RWZI_N, RWZI_N = RWZI_N + N_RWZI_to_3$RWZI_N)
+
+        # RWZI+BL, P
+        P_RWZI_to_3 <- filter(Routing_RWZI_P, ID == Upper[i,6]) %>%
+          mutate(RWZI_P = P_RWZI_from$Afwenteling * Upper[i,7]) %>%
+          select(ID, Year, Month, RWZI_P)
+        P_RWZI_to_3 <- left_join(Catchment_Time, P_RWZI_to_3, by = c("ID", "Year", "Month")) %>%
+          replace(is.na(.), 0.0)
+        Routing_RWZI_P <- mutate(Routing_RWZI_P, RWZI_P = RWZI_P + P_RWZI_to_3$RWZI_P)
+
+        N_BL_to_3 <- filter(Routing_BL_N, ID == Upper[i,6]) %>%
+          mutate(BL_N = N_BL_from$Afwenteling * Upper[i,7]) %>%
+          select(ID, Year, Month, BL_N)
+        N_BL_to_3 <- left_join(Catchment_Time, N_BL_to_3, by = c("ID", "Year", "Month")) %>%
+          replace(is.na(.), 0.0)
+        Routing_BL_N <- mutate(Routing_BL_N, BL_N = BL_N + N_BL_to_3$BL_N)
+
+        # BL+BL, P
+        P_BL_to_3 <- filter(Routing_BL_P, ID == Upper[i,6]) %>%
+          mutate(BL_P = P_BL_from$Afwenteling * Upper[i,7]) %>%
+          select(ID, Year, Month, BL_P)
+        P_BL_to_3 <- left_join(Catchment_Time, P_BL_to_3, by = c("ID", "Year", "Month")) %>%
+          replace(is.na(.), 0.0)
+        Routing_BL_P <- mutate(Routing_BL_P, BL_P = BL_P + P_BL_to_3$BL_P)
+      }
+    }
+  }
+  Routing <- setdiff(Routing, Upper)
+}
+# Catchment routing results, total retention and afwenteling from each catchment (including received from upper streams), stopped by 305 (total amount of N/P discharged into 305 is already calculated)
+
+write.csv(Routing_Stone_N, file = "../Results/Routing_Stone_N.csv", row.names = FALSE)
+write.csv(Routing_ER_N, file = "../Results/Routing_ER_N.csv", row.names = FALSE)
+write.csv(Routing_Stone_P, file = "../Results/Routing_Stone_P.csv", row.names = FALSE)
+write.csv(Routing_ER_P, file = "../Results/Routing_ER_P.csv", row.names = FALSE)
+
+write.csv(Routing_LO_N, file = "../Results/Routing_LO_N.csv", row.names = FALSE)
+write.csv(Routing_LO_P, file = "../Results/Routing_LO_P.csv", row.names = FALSE)
+
+write.csv(Routing_IN_N, file = "../Results/Routing_IN_N.csv", row.names = FALSE)
+write.csv(Routing_IN_P, file = "../Results/Routing_IN_P.csv", row.names = FALSE)
+
+write.csv(Routing_DW_N, file = "../Results/Routing_DW_N.csv", row.names = FALSE)
+
+write.csv(Routing_OR_N, file = "../Results/Routing_OR_N.csv", row.names = FALSE)
+write.csv(Routing_OR_P, file = "../Results/Routing_OR_P.csv", row.names = FALSE)
+
+write.csv(Routing_RWZI_N, file = "../Results/Routing_RWZI_N.csv", row.names = FALSE)
+write.csv(Routing_RWZI_P, file = "../Results/Routing_RWZI_P.csv", row.names = FALSE)
+
+write.csv(Routing_BL_N, file = "../Results/Routing_BL_N.csv", row.names = FALSE)
+write.csv(Routing_BL_P, file = "../Results/Routing_BL_P.csv", row.names = FALSE)
+```
+######################################################################################################################
+# routing to the north sea
+# direct into the north sea
+```{r}
+Routing_Sea_Direct <- as.data.frame(read_delim(TXT_To_Sea_Direct, show_col_types = FALSE)) %>%
+  mutate(Distance = 0.0, Percent = 1.0) %>%
+  rename("Into" = "Noordzee", "Name" = "NAAM") %>%
+  select(ID, Name, Into, Distance, Percent)
+```
+# indirect into the north sea, in meter
+```{r}
+Routing_Sea_InDirect <- as.data.frame(read_csv(CSV_To_Sea_InDirect, show_col_types = FALSE)) %>%
+  pivot_longer(5:12, names_to = "Into", values_to = "Distance") %>%
+  mutate(Percent = case_when(NAAM == "Maas" & Into == "Haringvliet" ~ 0.29,
+                             NAAM == "Maas" & Into == "Nieuwe Waterweg" ~ 0.68,
+                             NAAM == "Maas" & Into == "Noordzeekanaal" ~ 0.03,
+                             NAAM == "Schelde" & Into == "Oosterschelde" ~ 0.5,
+                             NAAM == "Schelde" & Into == "Westerschelde" ~ 0.5,
+                             NAAM == "Rijn West" & Into == "Haringvliet" ~ 0.29,
+                             NAAM == "Rijn West" & Into == "Nieuwe Waterweg" ~ 0.68,
+                             NAAM == "Rijn West" & Into == "Noordzeekanaal" ~ 0.03,
+                             NAAM == "Rijn Oost" & Into == "IJsselmeer" ~ 1.0,
+                             NAAM == "Rijn Noord" & Into == "Waddenzee West" ~ 1.0,
+                             NAAM == "Eems" & Into == "Waddenzee Oost" ~ 1.0)) %>%
+  drop_na() %>%
+  rename("Name" = "NAAM") %>%
+  select(ID, Name, Into, Distance, Percent)
+```
+# All
+```{r}
+Routing_Sea <- bind_rows(Routing_Sea_Direct, Routing_Sea_InDirect) %>%
+  mutate(Release_Fra_N = exp(- K_N * Distance / (V_stream * 24 * 60 * 60)),
+         Release_Fra_P = exp(- K_P * Distance / (V_stream * 24 * 60 * 60)),
+         Ret_Extra = case_when(Into == "IJsselmeer" ~ 0.5,
+                               Into %in% c("Haringvliet", "Westerschelde", "Oosterschelde") ~ 0.9,
+                               TRUE ~ 1.0)) %>% # proportional to travel time, extra retention for Ijselmeer en Estuaria
+  mutate(Release_Fra_P = Release_Fra_P * Ret_Extra) %>%
+  mutate(Release_Fra_P = ifelse(Release_Fra_P < 0.1, 0.1, Release_Fra_P), Release_Fra_N = ifelse(Release_Fra_N < 0.1, 0.1, Release_Fra_N))  # afkappen zodat retentie nooit groter is dan 90%
+```
+# ----------------------------------------------------------
+# Prepare data for river routing
+# Stone N
+```{r}
+Noordzee_Stone_N <- select(Routing_Stone_N, ID, Year, Month, Afwenteling) %>%
+  inner_join(Routing_Sea, by = "ID")
+
+N_WenO <- filter(Noordzee_Stone_N, Into == "Wester- en Oosterschelde")
+N_W <- mutate(N_WenO, Afwenteling = 0.7 * Afwenteling, Into = "Westerschelde")
+N_O <- mutate(N_WenO, Afwenteling = 0.3 * Afwenteling, Into = "Oosterschelde")
+
+Noordzee_Stone_N <- Noordzee_Stone_N %>%
+  filter(!Into %in% c("Wester- en Oosterschelde", "**Duitsland")) %>%
+  bind_rows(N_W, N_O)
+Noordzee_Stone_N <- Noordzee_Stone_N %>%
+  mutate(Stone_N = Percent * Release_Fra_N * Afwenteling) %>%
+  group_by(Year, Month, Into) %>%
+  summarise(Stone_N = sum(Stone_N, na.rm = TRUE), .groups = "drop")
+
+write.csv(Noordzee_Stone_N, file = "../Results/Noordzee_Stone_N.csv", row.names = FALSE)
+```
+# -------------------------------------
+# Stone P
+```{r}
+Noordzee_Stone_P <- select(Routing_Stone_P, ID, Year, Month, Afwenteling) %>%
+  inner_join(Routing_Sea, by = "ID")
+
+P_WenO <- filter(Noordzee_Stone_P, Into == "Wester- en Oosterschelde")
+P_W <- mutate(P_WenO, Afwenteling = 0.7 * Afwenteling, Into = "Westerschelde")
+P_O <- mutate(P_WenO, Afwenteling = 0.3 * Afwenteling, Into = "Oosterschelde")
+
+Noordzee_Stone_P <- Noordzee_Stone_P %>%
+  filter(!Into %in% c("Wester- en Oosterschelde", "**Duitsland")) %>%
+  bind_rows(P_W, P_O)
+Noordzee_Stone_P <- Noordzee_Stone_P %>%
+  mutate(Stone_P = Percent * Release_Fra_P * Afwenteling) %>%
+  group_by(Year, Month, Into) %>%
+  summarise(Stone_P = sum(Stone_P, na.rm = TRUE), .groups = "drop")
+
+write.csv(Noordzee_Stone_P, file = "../Results/Noordzee_Stone_P.csv", row.names = FALSE)
+```
+# -------------------------------------
+# ER N
+```{r}
+Noordzee_ER_N <- select(Routing_ER_N, ID, Year, Month, Afwenteling) %>%
+  inner_join(Routing_Sea, by = "ID")
+
+N_WenO <- filter(Noordzee_ER_N, Into == "Wester- en Oosterschelde")
+N_W <- mutate(N_WenO, Afwenteling = 0.7 * Afwenteling, Into = "Westerschelde")
+N_O <- mutate(N_WenO, Afwenteling = 0.3 * Afwenteling, Into = "Oosterschelde")
+
+Noordzee_ER_N <- Noordzee_ER_N %>%
+  filter(!Into %in% c("Wester- en Oosterschelde", "**Duitsland")) %>%
+  bind_rows(N_W, N_O)
+Noordzee_ER_N <- Noordzee_ER_N %>%
+  mutate(ER_N = Percent * Release_Fra_N * Afwenteling) %>%
+  group_by(Year, Month, Into) %>%
+  summarise(ER_N = sum(ER_N, na.rm = TRUE), .groups = "drop")
+
+write.csv(Noordzee_ER_N, file = "../Results/Noordzee_ER_N.csv", row.names = FALSE)
+```
+# -------------------------------------
+# ER P
+```{r}
+Noordzee_ER_P <- select(Routing_ER_P, ID, Year, Month, Afwenteling) %>%
+  inner_join(Routing_Sea, by = "ID")
+
+P_WenO <- filter(Noordzee_ER_P, Into == "Wester- en Oosterschelde")
+P_W <- mutate(P_WenO, Afwenteling = 0.7 * Afwenteling, Into = "Westerschelde")
+P_O <- mutate(P_WenO, Afwenteling = 0.3 * Afwenteling, Into = "Oosterschelde")
+
+Noordzee_ER_P <- Noordzee_ER_P %>%
+  filter(!Into %in% c("Wester- en Oosterschelde", "**Duitsland")) %>%
+  bind_rows(P_W, P_O)
+Noordzee_ER_P <- Noordzee_ER_P %>%
+  mutate(ER_P = Percent * Release_Fra_P * Afwenteling) %>%
+  group_by(Year, Month, Into) %>%
+  summarise(ER_P = sum(ER_P, na.rm = TRUE), .groups = "drop")
+
+write.csv(Noordzee_ER_P, file = "../Results/Noordzee_ER_P.csv", row.names = FALSE)
+```
+# -------------------------------------
+# IN N
+```{r}
+Noordzee_IN_N <- select(Routing_IN_N, ID, Year, Month, Afwenteling) %>%
+  inner_join(Routing_Sea, by = "ID")
+
+N_WenO <- filter(Noordzee_IN_N, Into == "Wester- en Oosterschelde")
+N_W <- mutate(N_WenO, Afwenteling = 0.7 * Afwenteling, Into = "Westerschelde")
+N_O <- mutate(N_WenO, Afwenteling = 0.3 * Afwenteling, Into = "Oosterschelde")
+
+Noordzee_IN_N <- Noordzee_IN_N %>%
+  filter(!Into %in% c("Wester- en Oosterschelde", "**Duitsland")) %>%
+  bind_rows(N_W, N_O)
+Noordzee_IN_N <- Noordzee_IN_N %>%
+  mutate(IN_N = Percent * Release_Fra_N * Afwenteling) %>%
+  group_by(Year, Month, Into) %>%
+  summarise(IN_N = sum(IN_N, na.rm = TRUE), .groups = "drop")
+
+write.csv(Noordzee_IN_N, file = "../Results/Noordzee_IN_N.csv", row.names = FALSE)
+```
+# -------------------------------------
+# IN P
+```{r}
+Noordzee_IN_P <- select(Routing_IN_P, ID, Year, Month, Afwenteling) %>%
+  inner_join(Routing_Sea, by = "ID")
+
+P_WenO <- filter(Noordzee_IN_P, Into == "Wester- en Oosterschelde")
+P_W <- mutate(P_WenO, Afwenteling = 0.7 * Afwenteling, Into = "Westerschelde")
+P_O <- mutate(P_WenO, Afwenteling = 0.3 * Afwenteling, Into = "Oosterschelde")
+
+Noordzee_IN_P <- Noordzee_IN_P %>%
+  filter(!Into %in% c("Wester- en Oosterschelde", "**Duitsland")) %>%
+  bind_rows(P_W, P_O)
+Noordzee_IN_P <- Noordzee_IN_P %>%
+  mutate(IN_P = Percent * Release_Fra_P * Afwenteling) %>%
+  group_by(Year, Month, Into) %>%
+  summarise(IN_P = sum(IN_P, na.rm = TRUE), .groups = "drop")
+
+write.csv(Noordzee_IN_P, file = "../Results/Noordzee_IN_P.csv", row.names = FALSE)
+```
+# -------------------------------------
+# LO N
+```{r}
+Noordzee_LO_N <- select(Routing_LO_N, ID, Year, Month, Afwenteling) %>%
+  inner_join(Routing_Sea, by = "ID")
+
+N_WenO <- filter(Noordzee_LO_N, Into == "Wester- en Oosterschelde")
+N_W <- mutate(N_WenO, Afwenteling = 0.7 * Afwenteling, Into = "Westerschelde")
+N_O <- mutate(N_WenO, Afwenteling = 0.3 * Afwenteling, Into = "Oosterschelde")
+
+Noordzee_LO_N <- Noordzee_LO_N %>%
+  filter(!Into %in% c("Wester- en Oosterschelde", "**Duitsland")) %>%
+  bind_rows(N_W, N_O)
+Noordzee_LO_N <- Noordzee_LO_N %>%
+  mutate(LO_N = Percent * Release_Fra_N * Afwenteling) %>%
+  group_by(Year, Month, Into) %>%
+  summarise(LO_N = sum(LO_N, na.rm = TRUE), .groups = "drop")
+
+write.csv(Noordzee_LO_N, file = "../Results/Noordzee_LO_N.csv", row.names = FALSE)
+```
+# -------------------------------------
+# LO P
+```{r}
+Noordzee_LO_P <- select(Routing_LO_P, ID, Year, Month, Afwenteling) %>%
+  inner_join(Routing_Sea, by = "ID")
+
+P_WenO <- filter(Noordzee_LO_P, Into == "Wester- en Oosterschelde")
+P_W <- mutate(P_WenO, Afwenteling = 0.7 * Afwenteling, Into = "Westerschelde")
+P_O <- mutate(P_WenO, Afwenteling = 0.3 * Afwenteling, Into = "Oosterschelde")
+
+Noordzee_LO_P <- Noordzee_LO_P %>%
+  filter(!Into %in% c("Wester- en Oosterschelde", "**Duitsland")) %>%
+  bind_rows(P_W, P_O)
+Noordzee_LO_P <- Noordzee_LO_P %>%
+  mutate(LO_P = Percent * Release_Fra_P * Afwenteling) %>%
+  group_by(Year, Month, Into) %>%
+  summarise(LO_P = sum(LO_P, na.rm = TRUE), .groups = "drop")
+
+write.csv(Noordzee_LO_P, file = "../Results/Noordzee_LO_P.csv", row.names = FALSE)
+```
+# -------------------------------------
+# OR N
+```{r}
+Noordzee_OR_N <- select(Routing_OR_N, ID, Year, Month, Afwenteling) %>%
+  inner_join(Routing_Sea, by = "ID")
+
+N_WenO <- filter(Noordzee_OR_N, Into == "Wester- en Oosterschelde")
+N_W <- mutate(N_WenO, Afwenteling = 0.7 * Afwenteling, Into = "Westerschelde")
+N_O <- mutate(N_WenO, Afwenteling = 0.3 * Afwenteling, Into = "Oosterschelde")
+
+Noordzee_OR_N <- Noordzee_OR_N %>%
+  filter(!Into %in% c("Wester- en Oosterschelde", "**Duitsland")) %>%
+  bind_rows(N_W, N_O)
+Noordzee_OR_N <- Noordzee_OR_N %>%
+  mutate(OR_N = Percent * Release_Fra_N * Afwenteling) %>%
+  group_by(Year, Month, Into) %>%
+  summarise(OR_N = sum(OR_N, na.rm = TRUE), .groups = "drop")
+
+write.csv(Noordzee_OR_N, file = "../Results/Noordzee_OR_N.csv", row.names = FALSE)
+```
+# -------------------------------------
+# OR P
+```{r}
+Noordzee_OR_P <- select(Routing_OR_P, ID, Year, Month, Afwenteling) %>%
+  inner_join(Routing_Sea, by = "ID")
+
+P_WenO <- filter(Noordzee_OR_P, Into == "Wester- en Oosterschelde")
+P_W <- mutate(P_WenO, Afwenteling = 0.7 * Afwenteling, Into = "Westerschelde")
+P_O <- mutate(P_WenO, Afwenteling = 0.3 * Afwenteling, Into = "Oosterschelde")
+
+Noordzee_OR_P <- Noordzee_OR_P %>%
+  filter(!Into %in% c("Wester- en Oosterschelde", "**Duitsland")) %>%
+  bind_rows(P_W, P_O)
+Noordzee_OR_P <- Noordzee_OR_P %>%
+  mutate(OR_P = Percent * Release_Fra_P * Afwenteling) %>%
+  group_by(Year, Month, Into) %>%
+  summarise(OR_P = sum(OR_P, na.rm = TRUE), .groups = "drop")
+
+write.csv(Noordzee_OR_P, file = "../Results/Noordzee_OR_P.csv", row.names = FALSE)
+```
+# -------------------------------------
+# DW N
+```{r}
+Noordzee_DW_N <- select(Routing_DW_N, ID, Year, Month, Afwenteling) %>%
+  inner_join(Routing_Sea, by = "ID")
+
+N_WenO <- filter(Noordzee_DW_N, Into == "Wester- en Oosterschelde")
+N_W <- mutate(N_WenO, Afwenteling = 0.7 * Afwenteling, Into = "Westerschelde")
+N_O <- mutate(N_WenO, Afwenteling = 0.3 * Afwenteling, Into = "Oosterschelde")
+
+Noordzee_DW_N <- Noordzee_DW_N %>%
+  filter(!Into %in% c("Wester- en Oosterschelde", "**Duitsland")) %>%
+  bind_rows(N_W, N_O)
+Noordzee_DW_N <- Noordzee_DW_N %>%
+  mutate(DW_N = Percent * Release_Fra_N * Afwenteling) %>%
+  group_by(Year, Month, Into) %>%
+  summarise(DW_N = sum(DW_N, na.rm = TRUE), .groups = "drop")
+
+write.csv(Noordzee_DW_N, file = "../Results/Noordzee_DW_N.csv", row.names = FALSE)
+```
+# -------------------------------------
+# RWZI N
+```{r}
+Noordzee_RWZI_N <- select(Routing_RWZI_N, ID, Year, Month, Afwenteling) %>%
+  inner_join(Routing_Sea, by = "ID")
+
+N_WenO <- filter(Noordzee_RWZI_N, Into == "Wester- en Oosterschelde")
+N_W <- mutate(N_WenO, Afwenteling = 0.7 * Afwenteling, Into = "Westerschelde")
+N_O <- mutate(N_WenO, Afwenteling = 0.3 * Afwenteling, Into = "Oosterschelde")
+
+Noordzee_RWZI_N <- Noordzee_RWZI_N %>%
+  filter(!Into %in% c("Wester- en Oosterschelde", "**Duitsland")) %>%
+  bind_rows(N_W, N_O)
+Noordzee_RWZI_N <- Noordzee_RWZI_N %>%
+  mutate(RWZI_N = Percent * Release_Fra_N * Afwenteling) %>%
+  group_by(Year, Month, Into) %>%
+  summarise(RWZI_N = sum(RWZI_N, na.rm = TRUE), .groups = "drop")
+
+write.csv(Noordzee_RWZI_N, file = "../Results/Noordzee_RWZI_N.csv", row.names = FALSE)
+```
+# -------------------------------------
+# RWZI P
+```{r}
+Noordzee_RWZI_P <- select(Routing_RWZI_P, ID, Year, Month, Afwenteling) %>%
+  inner_join(Routing_Sea, by = "ID")
+
+P_WenO <- filter(Noordzee_RWZI_P, Into == "Wester- en Oosterschelde")
+P_W <- mutate(P_WenO, Afwenteling = 0.7 * Afwenteling, Into = "Westerschelde")
+P_O <- mutate(P_WenO, Afwenteling = 0.3 * Afwenteling, Into = "Oosterschelde")
+
+Noordzee_RWZI_P <- Noordzee_RWZI_P %>%
+  filter(!Into %in% c("Wester- en Oosterschelde", "**Duitsland")) %>%
+  bind_rows(P_W, P_O)
+Noordzee_RWZI_P <- Noordzee_RWZI_P %>%
+  mutate(RWZI_P = Percent * Release_Fra_P * Afwenteling) %>%
+  group_by(Year, Month, Into) %>%
+  summarise(RWZI_P = sum(RWZI_P, na.rm = TRUE), .groups = "drop")
+
+write.csv(Noordzee_RWZI_P, file = "../Results/Noordzee_RWZI_P.csv", row.names = FALSE)
+```
+# -------------------------------------
+# BL N
+```{r}
+Noordzee_BL_N <- select(Routing_BL_N, ID, Year, Month, Afwenteling) %>%
+  inner_join(Routing_Sea, by = "ID")
+
+N_WenO <- filter(Noordzee_BL_N, Into == "Wester- en Oosterschelde")
+N_W <- mutate(N_WenO, Afwenteling = 0.7 * Afwenteling, Into = "Westerschelde")
+N_O <- mutate(N_WenO, Afwenteling = 0.3 * Afwenteling, Into = "Oosterschelde")
+
+Noordzee_BL_N <- Noordzee_BL_N %>%
+  filter(!Into %in% c("Wester- en Oosterschelde", "**Duitsland")) %>%
+  bind_rows(N_W, N_O)
+Noordzee_BL_N <- Noordzee_BL_N %>%
+  mutate(BL_N = Percent * Release_Fra_N * Afwenteling) %>%
+  group_by(Year, Month, Into) %>%
+  summarise(BL_N = sum(BL_N, na.rm = TRUE), .groups = "drop")
+
+write.csv(Noordzee_BL_N, file = "../Results/Noordzee_BL_N.csv", row.names = FALSE)
+```
+# -------------------------------------
+# BL P
+```{r}
+Noordzee_BL_P <- select(Routing_BL_P, ID, Year, Month, Afwenteling) %>%
+  inner_join(Routing_Sea, by = "ID")
+
+P_WenO <- filter(Noordzee_BL_P, Into == "Wester- en Oosterschelde")
+P_W <- mutate(P_WenO, Afwenteling = 0.7 * Afwenteling, Into = "Westerschelde")
+P_O <- mutate(P_WenO, Afwenteling = 0.3 * Afwenteling, Into = "Oosterschelde")
+
+Noordzee_BL_P <- Noordzee_BL_P %>%
+  filter(!Into %in% c("Wester- en Oosterschelde", "**Duitsland")) %>%
+  bind_rows(P_W, P_O)
+Noordzee_BL_P <- Noordzee_BL_P %>%
+  mutate(BL_P = Percent * Release_Fra_P * Afwenteling) %>%
+  group_by(Year, Month, Into) %>%
+  summarise(BL_P = sum(BL_P, na.rm = TRUE), .groups = "drop")
+
+write.csv(Noordzee_BL_P, file = "../Results/Noordzee_BL_P.csv", row.names = FALSE)
+```
+# -------------------------------------
+# Inlet big rivers
+```{r}
+Noordzee_Inlet_N <- select(Inlet_N_Monthly, ID, Year, Month, Afwenteling = Inlet_N) %>%
+  inner_join(Routing_Sea, by = "ID") %>%
+  mutate(Inlet_N = Percent * Release_Fra_N * Afwenteling) %>%
+  group_by(Year, Month, Into) %>%
+  summarise(Inlet_N = sum(Inlet_N, na.rm = TRUE), .groups = "drop")
+
+write.csv(Noordzee_Inlet_N, file = "../Results/Noordzee_BL_BigRivers_N.csv", row.names = FALSE)
+```
+# -------------------------------------
+# Inlet P, big rivers
+```{r}
+Noordzee_Inlet_P <- select(Inlet_P_Monthly, ID, Year, Month, Afwenteling = Inlet_P) %>%
+  inner_join(Routing_Sea, by = "ID") %>%
+  mutate(Inlet_P = Percent * Release_Fra_P * Afwenteling) %>%
+  group_by(Year, Month, Into) %>%
+  summarise(Inlet_P = sum(Inlet_P, na.rm = TRUE), .groups = "drop")
+
+write.csv(Noordzee_Inlet_P, file = "../Results/Noordzee_BL_BigRivers_P.csv", row.names = FALSE)
+```
+# -------------------------------------
+#--------------------------------------------
+
