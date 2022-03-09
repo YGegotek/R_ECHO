@@ -2,7 +2,11 @@
 # Objective: TODO
 # Created by: Yanjiao
 # Created on: 10/19/202111:28 AM
-
+#-----------------------------
+# Sources
+#-----------------------------
+Nutrients <- c("N", "P")
+Sources <- c("IN", "LO", "OR", "DW")
 #-----------------------------
 # Period of interest
 #-----------------------------

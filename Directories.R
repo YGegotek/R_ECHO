@@ -21,7 +21,7 @@ CSV_To_Sea_InDirect <- "../Routing/afstand_stroomgebieden_naar_Noordzee.csv"
 # Plot, Datum, OppAfv, Afv, Oppnhafv, Nhafv, Oppniafv, Niafv, Oppnoafv, Noafv, Oppppafv, PPafv, Opppoafv, Poafv
 CSV_Stone_All <- "../Stone/Stone_*.csv"
 CSV_Stone <- "../Stone/Stone.csv"
-CSV_Stone_2016_2017 <- "../Stone/Stone_2016_2017.csv"
+
 CSV_Stone_2019 <- "../LWKM/LWKM_2019.csv"
 CSV_Stone_2027B <- "../LWKM/LWKM_2027_Climate_B.csv"
 CSV_Stone_2027C <- "../LWKM/LWKM_2027_Climate_C.csv"
@@ -32,21 +32,22 @@ CSV_Stone_Kwel_Concentration <- "../Stone/botnut.csv"
 ####################################################
 # Soil and land type information
 TXT_Soil <- "../Retention/gebiedskenmerken.txt"
+CSV_Retention_UA_N <- "../Retention/Retention_UA_N.csv"
+CSV_Retention_UA_P <- "../Retention/Retention_UA_P.csv"
+CSV_Retention_ER_N <- "../Retention/Retention_ER_N.csv"
+CSV_Retention_ER_P <- "../Retention/Retention_ER_P.csv"
 ####################################################
 # Emission registration
 # couple catchment number with emission registration shape file gaf90
-CSV_ER <- "../Shape/ER/Catchment_ER.csv"
+CSV_Catchment_ER <- "../Shape/ER/Catchment_ER.csv"
 # couple EMK code with emission source groups
 CSV_EMK <- "../Emission_registration/ER/EMK_Group.csv"
 
 # emission data
-TXT_ER_All <- "../Emission_registration/txt/ER_*.csv"
-ACCDB_ER_All <- "../Emission_registration/ACCDB/ER*.accdb"
+TXT_ER_All <- "../Emission_registration/CSV/ER_*.csv"
+ACCDB_ER_All <- "../Emission_registration/ACCDB/ER_*.csv"
 
-CSV_ER_N <- "../Emission_registration/ER/ER_N.csv"
-CSV_ER_P <- "../Emission_registration/ER/ER_P.csv"
-CSV_IN_N_Yearly <- "../Emission_registration/ER/IN_N_Yearly.csv"
-CSV_IN_P_Yearly <- "../Emission_registration/ER/IN_P_Yearly.csv"
+CSV_ER <- "../Emission_registration/ER/ER.csv"
 # RWZI
 CSV_RWZI_Catchment <- "../Emission_registration/ER/RWZI_AI_ID.csv"
 #-------------------------------------------------------------------------------------
@@ -64,6 +65,13 @@ CSV_IN_buitenland_N_mean2 <- "../Inlet/IN_buitenland_N_mean2.csv"
 CSV_IN_buitenland_P_mean <- "../Inlet/IN_buitenland_P_mean.csv"
 CSV_IN_buitenland_P_mean2 <- "../Inlet/IN_buitenland_P_mean2.csv"
 #
+CSV_Inlet_Small_N <- "../Inlet/Inlet_SmallRivers_N_Monthly.csv"
+CSV_Inlet_Small_P <- "../Inlet/Inlet_SmallRivers_P_Monthly.csv"
+
+CSV_Inlet_Big_N <- "../Inlet/Inlet_BigRivers_N_Monthly.csv"
+CSV_Inlet_Big_P <- "../Inlet/Inlet_BigRivers_P_Monthly.csv"
+
+
 # # Observations
 # CSV_Observations_Q <- "../Observation/Observationsdischarge.csv"
 # CSV_Observations_N <- "../Observation/ObservationsN_total.csv"
