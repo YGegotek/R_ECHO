@@ -55,3 +55,7 @@ N_Ret_Veen_Summer_gNm2 <-  4.4
 V_stream <- 0.5
 K_N <- 0.05
 K_P <- 0.09
+
+# Foreign inlet location
+Inlet_location_Q <- c("EIJSDGS", "LOBH", "SCHAARVODDL")
+Inlet_location_NP <- c("EIJSDPTN", "LOBPTN", "SCHAARVODDL")

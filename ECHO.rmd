@@ -10,16 +10,16 @@ Main sources are:
 - Emission Registration (Industry, Atmospheric deposition, Other agriculture, Water treatment plants, Others) [ER](http://www.emissieregistratie.nl/erpubliek/erpub/default.nl.aspx)
 - Foreign rivers/streams [RWS](https://waterinfo.rws.nl/#!/nav/expert/)
 
-1. Load packages, constants and functions
+1. Load R packages
 
 ```{r}
 pacman::p_load("tidyverse", "sf", "RODBC", "lubridate")
 ```
 2. Settings and functions
 ```{r}
-source("Directories.R")
-source("Functions.R")
-source("Constants.R")
+source("Directories.R") # All paths are defined here
+source("Functions.R") # Functions
+source("Constants.R") # Constants
 ```
 3. load STONE shape files: 538 catchments (ha), and merge with stone plot numbers
 ```{r}
