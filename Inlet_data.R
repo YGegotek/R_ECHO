@@ -33,9 +33,9 @@ Inlet_N_Monthly <- filter(Inlet_N_Monthly, !Location == "LOBPTN") %>%
                         Location ==  "LOBPTN2" ~ 1004,
                         Location ==  "EIJSDPTN" ~ 1001,
                         Location ==  "SCHAARVODDL" ~ 1003)) %>%
-  select(ID, Year, Month, Emission)
+  select(ID, Year, Month, Out = Emission)
 write.csv(Inlet_N_Monthly, file = "../Inlet/Inlet_BigRivers_N_Monthly.csv", row.names = FALSE)
-
+write.csv(Inlet_N_Monthly, file = "../Results/Routing_BL3_N_Monthly.csv", row.names = FALSE)
 Inlet_N_Yearly <- Inlet_N_Monthly %>%
   group_by(ID, Year) %>%
   summarise(Emission = sum(Emission, na.rm = TRUE), .groups = "drop")
@@ -60,9 +60,10 @@ Inlet_P_Monthly <- filter(Inlet_P_Monthly, !Location == "LOBPTN") %>%
                         Location ==  "LOBPTN2" ~ 1004,
                         Location ==  "EIJSDPTN" ~ 1001,
                         Location ==  "SCHAARVODDL" ~ 1003)) %>%
-  select(ID, Year, Month, Emission)
+  select(ID, Year, Month, Out = Emission)
 
 write.csv(Inlet_P_Monthly, file = "../Inlet/Inlet_BigRivers_P_Monthly.csv", row.names = FALSE)
+write.csv(Inlet_N_Monthly, file = "../Results/Routing_BL3_P_Monthly.csv", row.names = FALSE)
 
 Inlet_P_Yearly <- Inlet_P_Monthly %>%
   group_by(ID, Year) %>%
@@ -102,11 +103,11 @@ IN_buitenland_N_Monthly <- left_join(Catchment_Time, IN_buitenland_N_Monthly, by
   replace(is.na(.), 0.0) %>%
   mutate(Emission = Emission + IN_buitenland_N_Monthly2$BL_N)
 write.csv(IN_buitenland_N_Monthly, file = "../Inlet/Inlet_SmallRivers_N_Monthly.csv", row.names = FALSE)
-
+write.csv(IN_buitenland_N_Monthly, file = "../Results/BL_N_Monthly.csv", row.names = FALSE)
 IN_buitenland_N_Yearly <- IN_buitenland_N_Monthly %>%
   group_by(ID, Year) %>%
   summarise(Emission = sum(Emission, na.rm = TRUE), .groups = "drop")
-write.csv(IN_buitenland_N_Yearly, file = "../Inlet/Inlet_SmallRivers_N_Yearly.csv", row.names = FALSE)
+write.csv(IN_buitenland_N_Yearly, file = "../Results/BL_N_Yearly.csv", row.names = FALSE)
 #-------------------------------------------------------------------------------------
 # P
 # data as concentration
@@ -128,8 +129,9 @@ IN_buitenland_P_Monthly <- left_join(Catchment_Time, IN_buitenland_P_Monthly, by
   replace(is.na(.), 0.0) %>%
   mutate(Emission = Emission + IN_buitenland_P_Monthly2$BL_P)
 write.csv(IN_buitenland_P_Monthly, file = "../Inlet/Inlet_SmallRivers_P_Monthly.csv", row.names = FALSE)
-
+write.csv(IN_buitenland_P_Monthly, file = "../Results/BL_P_Monthly.csv", row.names = FALSE)
 IN_buitenland_P_Yearly <- IN_buitenland_P_Monthly %>%
   group_by(ID, Year) %>%
   summarise(Emission = sum(Emission, na.rm = TRUE), .groups = "drop")
 write.csv(IN_buitenland_P_Yearly, file = "../Inlet/Inlet_SmallRivers_P_Yearly.csv", row.names = FALSE)
+write.csv(IN_buitenland_P_Yearly, file = "../Results/BL_P_Yearly.csv", row.names = FALSE)

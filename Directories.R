@@ -16,6 +16,7 @@ TXT_Routing_STONE <- "../Shape/STONE/Routing_STONE_per_id.txt"
 TXT_To_Sea_Direct <- "../Routing/stroomgebieden_die_direct_lozen_op_Noordzee.txt"
 # Routing to the sea, for catchments that routing via rivers to the north sea
 CSV_To_Sea_InDirect <- "../Routing/afstand_stroomgebieden_naar_Noordzee.csv"
+CSV_Routing_Sea <- "../Routing/Routing_Sea.csv"
 ####################################################
 # STONE output, for calculating overland flow and ground water flow from nature and agriculture area
 # Plot, Datum, OppAfv, Afv, Oppnhafv, Nhafv, Oppniafv, Niafv, Oppnoafv, Noafv, Oppppafv, PPafv, Opppoafv, Poafv

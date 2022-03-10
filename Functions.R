@@ -60,3 +60,44 @@ Routing_catchment <- function(Routing, Nutrient){
   }
   return(Nutrient)
 }
+#-----------------------------------------------------------------------------------------------------
+# River routing to the north sea
+Routing_river <- function(Routing, Nutrient){
+
+  Noordzee <- select(Nutrient, ID, Year, Month, Out) %>%
+    inner_join(Routing, by = "ID")
+
+  N_WenO <- filter(Noordzee, Into == "Wester- en Oosterschelde")
+  N_W <- mutate(N_WenO, Afwenteling = 0.7 * Out, Into = "Westerschelde")
+  N_O <- mutate(N_WenO, Afwenteling = 0.3 * Out, Into = "Oosterschelde")
+
+  Noordzee <- Noordzee %>%
+    filter(!Into %in% c("Wester- en Oosterschelde", "**Duitsland")) %>%
+    bind_rows(N_W, N_O)
+  Noordzee <- Noordzee %>%
+    mutate(Emission_Sea = Percent * Release_Fra_N * Out) %>%
+    group_by(Year, Month, Into) %>%
+    summarise(Emission_Sea = sum(Emission_Sea, na.rm = TRUE), .groups = "drop")
+
+  return(Noordzee)
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

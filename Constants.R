@@ -6,7 +6,9 @@
 # Sources
 #-----------------------------
 Nutrients <- c("N", "P")
-Sources <- c("IN", "LO", "OR", "DW")
+Sources_ER <- c("IN", "LO", "OR", "DW")
+Sources_Routing <- c("IN", "LO", "OR", "DW", "BL", "RWZI", "UA")
+Sources_Routing_Sea <- c("IN", "LO", "OR", "DW", "BL", "RWZI", "UA", "BL3")
 #-----------------------------
 # Period of interest
 #-----------------------------
